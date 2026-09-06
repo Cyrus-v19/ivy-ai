@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ivy - AI Assistant</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" onerror="window.markedBlocked = true;"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+<style>
+  :root { 
+    --bg-color: #131314; 
+    --surface-color: #1e1f20; 
+    --user-bubble: #282a2c;
+    --text-primary: #e3e3e3; 
+    --text-secondary: #c4c7c5;
+    --accent: #a8c7fa; 
+    --ivy-color: #7fd1ae;
+  }
+  
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg-color); color: var(--text-primary); margin:0; display:flex; flex-direction:column; height:100vh; box-sizing:border-box; }
+  
+  header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: var(--bg-color); position: sticky; top: 0; z-index: 10; }
+  h2 { margin:0; color: var(--text-primary); display:flex; align-items:center; gap:8px; font-size: 1.2rem; font-weight: 500; }
+  .toolbar { display: flex; gap: 4px; align-items: center; }
+  .toolbar button { background: transparent; color: var(--text-secondary); border: none; padding: 8px; font-size: 1.1rem; cursor: pointer; border-radius: 50%; transition: background 0.2s; }
+  .toolbar button:hover { background: var(--surface-color); }
+  .toolbar button.active { color: var(--ivy-color); }
+  
+  #setupBox { background: var(--surface-color); padding: 20px; border-radius: 16px; margin: 0 20px 20px; display:none; max-height: 80vh; overflow-y: auto; }
+  #setupBox input, #setupBox select, #setupBox textarea { width: 100%; box-sizing: border-box; margin: 8px 0 16px; padding: 12px; border-radius: 8px; border: 1px solid #444; background: var(--bg-color); color: var(--text-primary); font-family: inherit; }
+  #setupBox textarea { resize: vertical; height: 90px; }
+  #setupBox button { background: var(--accent); color: #000; font-weight: 600; padding: 10px 20px; border: none; border-radius: 20px; cursor: pointer; }
+  .setup-label { display: block; color: var(--text-secondary); font-size: 0.85rem; margin-top: 10px; }
+  
+  #chat { flex:1; overflow-y:auto; padding: 20px; display: flex; flex-direction: column; gap: 24px; scroll-behavior: smooth; }
+  
+  .msg-row { display: flex; width: 100%; animation: fadeIn 0.3s ease-in-out; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  .row-user { justify-content: flex-end; }
+  .row-bot { justify-content: flex-start; gap: 16px; }
+  
+  .msg-user { background: var(--user-bubble); padding: 12px 18px; border-radius: 24px 24px 4px 24px; max-width: 80%; font-size: 1rem; line-height: 1.5; word-wrap: break-word; }
+  .msg-bot { max-width: 85%; font-size: 1rem; line-height: 1.6; color: var(--text-primary); }
+  
+  .avatar { width: 36px; height: 36px; border-radius: 50%; background: #1a3329; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; color: var(--ivy-color); border: 1px solid #2d4d3d; }
+  .msg-bot p { margin-top: 0; }
+  
+  .msg-bot pre { background: var(--surface-color); padding: 36px 16px 16px; border-radius: 12px; overflow-x: auto; margin: 12px 0; position: relative; }
+  .msg-bot code { font-family: monospace; font-size: 0.9em; }
+  .copy-code-btn { position: absolute; top: 6px; right: 8px; background: rgba(255,255,255,0.1); border: none; color: var(--text-secondary); padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; cursor: pointer; transition: 0.2s; }
+  .copy-code-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
+  
+  #inputContainer { padding: 0 20px 20px; background: var(--bg-color); }
+  
+  .prompt-chips { display: flex; gap: 8px; overflow-x: auto; padding: 0 0 10px 4px; scrollbar-width: none; }
+  .prompt-chips::-webkit-scrollbar { display: none; }
+  .chip { background: var(--surface-color); border: 1px solid #333; color: var(--text-secondary); padding: 6px 14px; border-radius: 16px; font-size: 0.85rem; cursor: pointer; white-space: nowrap; transition: 0.2s; }
+  .chip:hover { background: #282a2c; color: var(--text-primary); border-color: #555; }
+
+  #imagePreviewContainer { display: none; padding: 0 0 10px 12px; align-items: center; gap: 10px; }
+  .preview-wrapper { position: relative; display: inline-block; }
+  #previewImg { height: 50px; width: 50px; border-radius: 8px; border: 1px solid #444; object-fit: cover; }
+  .remove-img-btn { position: absolute; top: -6px; right: -6px; background: #ff6b6b; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+
+  .input-wrapper { background: var(--surface-color); border-radius: 32px; display: flex; padding: 6px 6px 6px 12px; align-items: center; transition: background 0.2s; }
+  .input-wrapper:focus-within { background: #282a2c; }
+  
+  .icon-btn { background: transparent; color: var(--text-secondary); border: none; font-size: 1.2rem; cursor: pointer; padding: 8px; border-radius: 50%; transition: 0.2s; display: flex; align-items: center; justify-content: center; }
+  .icon-btn:hover { color: var(--text-primary); background: rgba(255,255,255,0.05); }
+  #micBtn.recording { color: #ff6b6b; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.2); } 100% { transform: scale(1); } }
+  
+  input#q { flex:1; background: transparent; border: none; color: var(--text-primary); font-size: 1rem; outline: none; padding: 12px 8px; }
+  input#q::placeholder { color: #8e918f; }
+  
+  #sendBtn { background: transparent; color: var(--text-primary); border: none; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; transition: background 0.2s; }
+  #sendBtn:hover { background: rgba(255,255,255,0.1); }
+  #sendBtn:disabled { color: #555; cursor: not-allowed; }
+  
+  .thinking { display: flex; align-items: center; gap: 6px; height: 24px; font-style: italic; color: var(--text-secondary); font-size: 0.9rem;}
+  .dot { width: 5px; height: 5px; background-color: var(--text-secondary); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
+  .dot:nth-child(1) { animation-delay: -0.32s; }
+  .dot:nth-child(2) { animation-delay: -0.16s; }
+  @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+</style>
+</head>
+<body>
+
+  <header>
+    <h2>🌿 Ivy</h2>
+    <div class="toolbar">
+      <button id="voiceToggle" onclick="toggleVoice()" title="Toggle Ivy's Voice">🔇</button>
+      <button onclick="toggleSetup()" title="Settings & Memory">⚙️</button>
+      <button onclick="clearHistory()" title="Clear Chat">🗑️</button>
+    </div>
+  </header>
+
+  <div id="setupBox">
+    <h3 style="margin-top:0;">API & Assistant Settings</h3>
+    
+    <label class="setup-label">1. OpenRouter API Key (sk-or-v1-...)</label>
+    <input id="apiKey" placeholder="sk-or-v1-..." type="password">
+    
+    <label class="setup-label">2. Serper API Key (Required for Image & Video Searches)</label>
+    <input id="serperKey" placeholder="Your Serper.dev key..." type="password">
+
+    <label class="setup-label">3. Ivy's Vibe & Tone</label>
+    <select id="ivyPersona">
+      <option value="balanced">Balanced & Helpful (Default)</option>
+      <option value="tech">No-Nonsense Tech Assistant</option>
+      <option value="chill">Chill & Friendly Companion</option>
+      <option value="coach">Strict & Motivational Coach</option>
+    </select>
+
+    <label class="setup-label">4. Ivy's Memory Bank (Permanent user facts & preferences)</label>
+    <textarea id="ivyMemory" placeholder="e.g. My name is Alex, I code in JavaScript/Python..."></textarea>
+
+    <button onclick="saveKeys()">Save Settings</button>
+  </div>
+
+  <div id="chat"></div>
+  
+  <div id="inputContainer">
+    <div class="prompt-chips">
+      <button class="chip" onclick="useChip('Give me a quick step-by-step plan for this: ')">🚀 Quick Plan</button>
+      <button class="chip" onclick="useChip('Debug and fix this code: ')">💻 Debug Code</button>
+      <button class="chip" onclick="useChip('Show me an image of ')">🖼️ Image Search</button>
+      <button class="chip" onclick="useChip('Find a YouTube video about ')">📺 YouTube Search</button>
+    </div>
+
+    <div id="imagePreviewContainer">
+      <div class="preview-wrapper">
+        <img id="previewImg" src="" alt="Preview">
+        <button class="remove-img-btn" onclick="clearImagePreview()">✕</button>
+      </div>
+      <span style="font-size: 0.85rem; color: var(--text-secondary);">Image attached</span>
+    </div>
+
+    <div class="input-wrapper">
+      <button id="micBtn" class="icon-btn" onclick="toggleMic()" title="Tap to Speak">🎙️</button>
+      <input type="file" id="imageInput" accept="image/*" style="display:none" onchange="handleImageSelect(event)">
+      <button class="icon-btn" onclick="document.getElementById('imageInput').click()" title="Upload Image">📎</button>
+      
+      <input id="q" placeholder="Ask Ivy, upload image, or type /imagine..." onkeydown="if(event.key==='Enter')send()">
+      <button id="sendBtn" onclick="send()">➤</button>
+    </div>
+  </div>
+
+<script>
+const chatBox = document.getElementById('chat');
+const sendBtn = document.getElementById('sendBtn');
+const qInput = document.getElementById('q');
+const micBtn = document.getElementById('micBtn');
+const voiceToggleBtn = document.getElementById('voiceToggle');
+
+let history = JSON.parse(localStorage.getItem('ivy_openrouter_history') || '[]');
+let selectedImageBase64 = null;
+let ivyEnvironmentContext = "";
+
+async function fetchEnvironmentAwareness() {
+  try {
+    const localTime = new Date().toLocaleString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const geoRes = await fetch('https://get.geojs.io/v1/ip/geo.json');
+    const geoData = await geoRes.json();
+    const { latitude, longitude, city, country } = geoData;
+
+    const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`);
+    const weatherData = await weatherRes.json();
+    const temp = weatherData.current_weather.temperature;
+    
+    ivyEnvironmentContext = `\n\n[Real-Time Environment]:\nCurrent Time: ${localTime}\nLocation: ${city}, ${country}\nTemperature: ${temp}°C`;
+  } catch (err) {
+    ivyEnvironmentContext = `\n\n[Real-Time Environment]:\nCurrent Time: ${new Date().toLocaleString()}\n(Location and weather data temporarily offline)`;
+  }
+}
+fetchEnvironmentAwareness();
+
+function useChip(text) {
+  qInput.value = text;
+  qInput.focus();
+}
+
+function getSystemPrompt() {
+  const persona = localStorage.getItem('ivy_persona') || 'balanced';
+  const memory = localStorage.getItem('ivy_memory') || '';
+  
+  let personaInstruction = "Keep answers helpful, conversational, and direct.";
+  if (persona === 'tech') personaInstruction = "Adopt a no-nonsense, highly technical persona. Focus purely on clean code, precise logic, and direct solutions.";
+  else if (persona === 'chill') personaInstruction = "Adopt a chill, super friendly, and conversational tone like a relaxed close friend.";
+  else if (persona === 'coach') personaInstruction = "Adopt a strict, high-performance coaching persona. Be direct, disciplined, and push the user.";
+
+  let memoryInstruction = memory ? `\n\n[Permanent User Context / Memory Bank]:\n${memory}` : '';
+  
+  return { role: "system", content: `You are Ivy, a personal AI assistant powered by OpenRouter. ${personaInstruction}${memoryInstruction}${ivyEnvironmentContext}` };
+}
+
+function handleImageSelect(event) {
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      const MAX_DIM = 900;
+      let width = img.width, height = img.height;
+      if (width > height) { if (width > MAX_DIM) { height *= MAX_DIM / width; width = MAX_DIM; } }
+      else { if (height > MAX_DIM) { width *= MAX_DIM / height; height = MAX_DIM; } }
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      selectedImageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+      document.getElementById('previewImg').src = selectedImageBase64;
+      document.getElementById('imagePreviewContainer').style.display = 'flex';
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearImagePreview() {
+  selectedImageBase64 = null;
+  document.getElementById('imagePreviewContainer').style.display = 'none';
+  document.getElementById('imageInput').value = '';
+}
+
+const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+if(SpeechRecognitionAPI) {
+  recognition = new SpeechRecognitionAPI();
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  recognition.onstart = () => micBtn.classList.add('recording');
+  recognition.onend = () => micBtn.classList.remove('recording');
+  recognition.onresult = (event) => { qInput.value = event.results[0][0].transcript; send(); };
+}
+
+function toggleMic() {
+  if(!recognition) { alert("Speech recognition is not supported in this browser."); return; }
+  try { micBtn.classList.contains('recording') ? recognition.stop() : recognition.start(); } catch(e) {}
+}
+
+let autoSpeak = false;
+let ivyVoice = null;
+function toggleVoice() {
+  if (typeof window.speechSynthesis === 'undefined') return;
+  autoSpeak = !autoSpeak;
+  if(autoSpeak) { voiceToggleBtn.innerText = "🔊"; voiceToggleBtn.classList.add("active"); }
+  else { voiceToggleBtn.innerText = "🔇"; voiceToggleBtn.classList.remove("active"); try { window.speechSynthesis.cancel(); } catch(e) {} }
+}
+
+function findBestVoice() {
+  if (typeof window.speechSynthesis === 'undefined') return;
+  const voices = window.speechSynthesis.getVoices();
+  if(!voices.length) return;
+  ivyVoice = voices.find(v => v.name.includes('Google UK English Female')) || voices.find(v => v.name.includes('Female')) || voices[0];
+}
+if(typeof window !== 'undefined' && 'speechSynthesis' in window) window.speechSynthesis.onvoiceschanged = findBestVoice;
+
+function speakText(text) {
+  if(!autoSpeak || typeof window.speechSynthesis === 'undefined') return;
+  try {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text.replace(/[*_#`]/g, ''));
+    if(ivyVoice) utterance.voice = ivyVoice;
+    window.speechSynthesis.speak(utterance);
+  } catch(e) {}
+}
+
+function toggleSetup() {
+  const box = document.getElementById('setupBox');
+  box.style.display = box.style.display === 'none' ? 'block' : 'none';
+  document.getElementById('apiKey').value = localStorage.getItem('ivy_openrouter_key') || '';
+  document.getElementById('serperKey').value = localStorage.getItem('ivy_serper_key') || '';
+  document.getElementById('ivyPersona').value = localStorage.getItem('ivy_persona') || 'balanced';
+  document.getElementById('ivyMemory').value = localStorage.getItem('ivy_memory') || '';
+}
+
+function saveKeys(){
+  const openrouterKey = document.getElementById('apiKey').value.trim();
+  const sKey = document.getElementById('serperKey').value.trim();
+  if(openrouterKey) localStorage.setItem('ivy_openrouter_key', openrouterKey);
+  if(sKey) localStorage.setItem('ivy_serper_key', sKey);
+  localStorage.setItem('ivy_persona', document.getElementById('ivyPersona').value);
+  localStorage.setItem('ivy_memory', document.getElementById('ivyMemory').value.trim());
+  if(openrouterKey) document.getElementById('setupBox').style.display = 'none';
+}
+
+function clearHistory() {
+  if(confirm('Clear all chat history?')) { history = []; localStorage.removeItem('ivy_openrouter_history'); renderHistory(); }
+}
+
+function formatText(text) {
+  if (typeof marked !== 'undefined' && marked.parse) return marked.parse(text);
+  return `<p style="white-space: pre-wrap;">${escapeHtml(text)}</p>`;
+}
+function escapeHtml(text) { return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+function attachCopyButtons(container) {
+  container.querySelectorAll('pre').forEach(pre => {
+    if (pre.querySelector('.copy-code-btn')) return;
+    const btn = document.createElement('button');
+    btn.className = 'copy-code-btn'; btn.innerText = 'Copy';
+    btn.onclick = () => {
+      navigator.clipboard.writeText(pre.querySelector('code')?.innerText || pre.innerText);
+      btn.innerText = 'Copied!'; setTimeout(() => btn.innerText = 'Copy', 2000);
+    };
+    pre.appendChild(btn);
+  });
+}
+
+function renderHistory(){
+  chatBox.innerHTML = '';
+  if(history.length === 0) {
+    chatBox.innerHTML = `<div class="msg-row row-bot"><div class="avatar">🌿</div><div class="msg-bot"><p>Hello! I am Ivy powered by OpenRouter. Ask away or search for pictures and videos!</p></div>`;
+    return;
+  }
+  history.forEach(m => {
+    if(m.role === 'system') return;
+    const isUser = m.role === 'user';
+    const row = document.createElement('div');
+    row.className = `msg-row ${isUser ? 'row-user' : 'row-bot'}`;
+    row.innerHTML = isUser ? `<div class="msg-user">${escapeHtml(m.content)}</div>` : `<div class="avatar">🌿</div><div class="msg-bot">${formatText(m.content)}</div>`;
+    if(!isUser) attachCopyButtons(row);
+    chatBox.appendChild(row);
+  });
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+async function fetchSerperImages(query, apiKey) {
+  if(!apiKey) return "";
+  try {
+    const res = await fetch('https://google.serper.dev/images', {
+      method: 'POST',
+      headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: query, num: 4 })
+    });
+    if(!res.ok) return "";
+    const data = await res.json();
+    if(data.images && data.images.length > 0) {
+      let html = `<div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">`;
+      data.images.slice(0, 4).forEach(img => {
+        html += `<a href="${img.link}" target="_blank" rel="noopener noreferrer"><img src="${img.imageUrl}" style="width: 130px; height: 130px; object-fit: cover; border-radius: 8px; border: 1px solid #444;" alt="Image"></a>`;
+      });
+      html += `</div>`;
+      return html;
+    }
+    return "";
+  } catch (e) { return ""; }
+}
+
+async function fetchSerperVideos(query, apiKey) {
+  if(!apiKey) return "";
+  try {
+    const res = await fetch('https://google.serper.dev/videos', {
+      method: 'POST',
+      headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: query, num: 3 })
+    });
+    if(!res.ok) return "";
+    const data = await res.json();
+    let snippets = [];
+    if(data.videos && data.videos.length > 0) {
+      data.videos.slice(0, 3).forEach(v => {
+        snippets.push(`📺 **[${v.title}](${v.link})**\n${v.snippet || ''}`);
+      });
+      return snippets.join("\n\n");
+    }
+    return "";
+  } catch (e) { return ""; }
+}
+
+async function send(){
+  const text = qInput.value.trim();
+  const openrouterKey = localStorage.getItem('ivy_openrouter_key');
+  const serperKey = localStorage.getItem('ivy_serper_key');
+  
+  if(!text && !selectedImageBase64) return;
+  if(!openrouterKey){ toggleSetup(); return; }
+
+  const activeImage = selectedImageBase64;
+  qInput.value = ''; clearImagePreview();
+  qInput.disabled = true; sendBtn.disabled = true; micBtn.disabled = true;
+
+  const displayUserText = `${activeImage ? '[📷 Image Attached] ' : ''}${text || 'Describe this image.'}`;
+  const userRow = document.createElement('div');
+  userRow.className = 'msg-row row-user';
+  userRow.innerHTML = `<div class="msg-user">${escapeHtml(displayUserText)}</div>`;
+  chatBox.appendChild(userRow);
+
+  const botRow = document.createElement('div');
+  botRow.className = 'msg-row row-bot';
+  botRow.innerHTML = `<div class="avatar">🌿</div><div class="msg-bot"><div class="thinking">Thinking <div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div>`;
+  chatBox.appendChild(botRow);
+  chatBox.scrollTop = chatBox.scrollHeight;
+
+  if (text.toLowerCase().startsWith('/imagine ')) {
+    const imagePrompt = text.substring(9).trim();
+    const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}?model=flux&nologo=true`;
+    botRow.innerHTML = `<div class="avatar">🌿</div><div class="msg-bot"><p>Here is your image for: <em>"${escapeHtml(imagePrompt)}"</em></p><img src="${imageUrl}" style="max-width: 100%; border-radius: 12px; margin-top: 8px; border: 1px solid #444;" alt="Generated"></div>`;
+    history.push({role:'user', content: displayUserText}, {role:'assistant', content: `[Generated Image: ${imagePrompt}]`});
+    localStorage.setItem('ivy_openrouter_history', JSON.stringify(history));
+    qInput.disabled = false; sendBtn.disabled = false; micBtn.disabled = false; qInput.focus();
+    return;
+  }
+
+  try {
+    let finalPrompt = text || "Describe this image.";
+    let injectedMediaHtml = "";
+    const lowerPrompt = finalPrompt.toLowerCase();
+    
+    const isImageRequest = serperKey && (lowerPrompt.includes('image of') || lowerPrompt.includes('picture of') || lowerPrompt.includes('photo of') || lowerPrompt.includes('show me'));
+    const isVideoRequest = serperKey && (lowerPrompt.includes('youtube') || lowerPrompt.includes('video of') || lowerPrompt.includes('videos about'));
+
+    if (isImageRequest) {
+      botRow.querySelector('.thinking').innerHTML = `Searching Google Images <div class="dot"></div><div class="dot"></div><div class="dot"></div>`;
+      injectedMediaHtml = await fetchSerperImages(text, serperKey);
+      if (injectedMediaHtml) finalPrompt = `[User requested images for: "${text}"]. Acknowledge this nicely.`;
+    } else if (isVideoRequest) {
+      botRow.querySelector('.thinking').innerHTML = `Searching YouTube <div class="dot"></div><div class="dot"></div><div class="dot"></div>`;
+      const videoContext = await fetchSerperVideos(text, serperKey);
+      if (videoContext) finalPrompt = `[Live YouTube Results]:\n${videoContext}\n\n[User's Request]: ${text}`;
+    }
+
+    let messagesPayload = [getSystemPrompt(), ...history.slice(-10), { role: 'user', content: finalPrompt }];
+    
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json', 
+        'Authorization': 'Bearer ' + openrouterKey,
+        'HTTP-Referer': window.location.href,
+        'X-Title': 'Ivy AI Assistant'
+      },
+      body: JSON.stringify({ 
+        model: 'openrouter/free', 
+        messages: messagesPayload, 
+        max_tokens: 2000 
+      })
+    });
+
+    if(!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error?.message || `OpenRouter API Error ${res.status}: Check your API key.`);
+    }
+
+    const data = await res.json();
+    let botResponse = data.choices[0].message.content;
+    if (injectedMediaHtml) botResponse += `<br>${injectedMediaHtml}`;
+
+    history.push({role:'user', content: displayUserText}, {role:'assistant', content: botResponse});
+    localStorage.setItem('ivy_openrouter_history', JSON.stringify(history));
+    
+    botRow.innerHTML = `<div class="avatar">🌿</div><div class="msg-bot">${formatText(botResponse)}</div>`;
+    attachCopyButtons(botRow); 
+    speakText(botResponse);
+
+  } catch(err){
+    botRow.innerHTML = `<div class="avatar">🌿</div><div class="msg-bot" style="color: #ff6b6b;">⚠️ ${escapeHtml(err.message)}</div>`;
+  } finally {
+    qInput.disabled = false; sendBtn.disabled = false; micBtn.disabled = false;
+    qInput.focus();
+    chatBox.scrollTop = chatBox.scrollHeight;
+  }
+}
+
+if(!localStorage.getItem('ivy_openrouter_key')) document.getElementById('setupBox').style.display = 'block';
+renderHistory();
+</script>
+</body>
+</html>
