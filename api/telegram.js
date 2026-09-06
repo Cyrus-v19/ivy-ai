@@ -37,7 +37,7 @@ export default async function handler(req, res) {
         'Authorization': 'Bearer ' + openrouterKey
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.0-flash-exp:free',
+        model: 'meta-llama/llama-3.3-70b-instruct:free',
         messages: [
           { role: 'system', content: 'You are Ivy, a helpful personal AI assistant.' },
           { role: 'user', content: finalPrompt }
@@ -47,7 +47,9 @@ export default async function handler(req, res) {
     });
 
     const data = await response.json();
-    const replyText = data.choices?.[0]?.message?.content || "Sorry, I couldn't process that.";
+    
+    // If OpenRouter returns an error object, capture it directly
+    const replyText = data.choices?.[0]?.message?.content || data.error?.message || "Sorry, I couldn't process that.";
 
     await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',
@@ -60,4 +62,4 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).json({ status: 'success' });
-    }
+}
