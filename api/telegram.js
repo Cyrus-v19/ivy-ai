@@ -9,17 +9,37 @@ export default async function handler(req, res) {
   const chatId = message.chat.id;
   const userText = message.text;
   const openrouterKey = process.env.OPENROUTER_API_KEY;
+  const serperKey = process.env.SERPER_API_KEY;
 
   try {
+    let finalPrompt = userText;
+
+    // Check if user is asking for news or live information, and search if Serper key exists
+    const lower = userText.toLowerCase();
+    const needsSearch = lower.includes('latest') || lower.includes('news') || lower.includes('today') || lower.includes('who is') || lower.includes('what is');
+    
+    if (needsSearch && serperKey) {
+      const searchRes = await fetch('https://google.serper.dev/search', {
+        method: 'POST',
+        headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ q: userText })
+      });
+      const searchData = await searchRes.json();
+      if (searchData.organic && searchData.organic.length > 0) {
+        const snippets = searchData.organic.slice(0, 4).map(item => `${item.title}: ${item.snippet}`).join('\n');
+        finalPrompt = `[Live Internet Search Results]:\n${snippets}\n\n[User Question]: ${userText}`;
+      }
+    }
+
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
-      headers: {
+      headers: { 
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ' + openrouterKey
       },
       body: JSON.stringify({
         model: 'openrouter/free',
-        messages: [{ role: 'user', content: userText }],
+        messages: [{ role: 'user', content: finalPrompt }],
         max_tokens: 1000
       })
     });
@@ -30,7 +50,7 @@ export default async function handler(req, res) {
     await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: replyText })
+      body: JSON.stringify({ chat_id: chatId, text: replyText, parse_mode: 'Markdown' })
     });
 
   } catch (err) {
