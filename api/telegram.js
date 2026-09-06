@@ -37,7 +37,7 @@ export default async function handler(req, res) {
         'Authorization': 'Bearer ' + openrouterKey
       },
       body: JSON.stringify({
-        model: 'openrouter/free',
+        model: 'google/gemini-2.0-flash-exp:free',
         messages: [
           { role: 'system', content: 'You are Ivy, a helpful personal AI assistant.' },
           { role: 'user', content: finalPrompt }
@@ -60,4 +60,4 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).json({ status: 'success' });
-}
+    }
