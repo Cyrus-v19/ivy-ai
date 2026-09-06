@@ -14,7 +14,6 @@ export default async function handler(req, res) {
   try {
     let finalPrompt = userText;
 
-    // Check if user is asking for news or live information, and search if Serper key exists
     const lower = userText.toLowerCase();
     const needsSearch = lower.includes('latest') || lower.includes('news') || lower.includes('today') || lower.includes('who is') || lower.includes('what is');
     
@@ -27,7 +26,7 @@ export default async function handler(req, res) {
       const searchData = await searchRes.json();
       if (searchData.organic && searchData.organic.length > 0) {
         const snippets = searchData.organic.slice(0, 4).map(item => `${item.title}: ${item.snippet}`).join('\n');
-        finalPrompt = `[Live Internet Search Results]:\n${snippets}\n\n[User Question]: ${userText}`;
+        finalPrompt = `Answer the user question using these live search results:\n${snippets}\n\nUser Question: ${userText}`;
       }
     }
 
@@ -39,7 +38,10 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'openrouter/free',
-        messages: [{ role: 'user', content: finalPrompt }],
+        messages: [
+          { role: 'system', content: 'You are Ivy, a helpful personal AI assistant.' },
+          { role: 'user', content: finalPrompt }
+        ],
         max_tokens: 1000
       })
     });
