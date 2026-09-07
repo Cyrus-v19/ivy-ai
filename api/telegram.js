@@ -49,8 +49,8 @@ export default async function handler(req, res) {
       }
     }
 
-    // Call Direct Gemini 2.0 Flash API
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`;
+    // Direct Call to latest Gemini Flash alias
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiKey}`;
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -77,7 +77,7 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           chat_id: chatId,
           photo: imageUrl,
-          caption: replyText.slice(0, 1024), // Telegram caption character limit
+          caption: replyText.slice(0, 1024), // Telegram caption limit
           parse_mode: 'Markdown'
         })
       });
@@ -98,4 +98,4 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).json({ status: 'success' });
-        }
+          }
