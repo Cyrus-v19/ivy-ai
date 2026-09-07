@@ -32,7 +32,7 @@ export default async function handler(req, res) {
                                  .replace(/draw\s*/i, '')
                                  .trim();
 
-      // Direct Imagen 3 API Call via Gemini API
+      // Imagen 3 Call via Gemini
       try {
         const imagenUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${geminiKey}`;
         const imagenRes = await fetch(imagenUrl, {
@@ -61,10 +61,10 @@ export default async function handler(req, res) {
           return res.status(200).json({ status: 'success' });
         }
       } catch (e) {
-        console.error("Imagen API call failed, falling back to Serper Images:", e);
+        console.error("Imagen API call failed:", e);
       }
 
-      // Fallback: Serper Image Search
+      // Fallback: Serper Images
       if (serperKey) {
         const imgRes = await fetch('https://google.serper.dev/images', {
           method: 'POST',
@@ -126,7 +126,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // --- 3. HIGH-SPEED GROQ ENGINE ---
+    // --- 3. GROQ ENGINE WITH DETAILED ERROR LOGGING ---
     let replyText = null;
 
     if (groqKey) {
@@ -154,13 +154,19 @@ export default async function handler(req, res) {
         });
 
         const groqData = await groqRes.json();
-        replyText = groqData.choices?.[0]?.message?.content;
+        if (groqData.choices?.[0]?.message?.content) {
+          replyText = groqData.choices[0].message.content;
+        } else {
+          console.error("Groq API Response Error:", JSON.stringify(groqData));
+        }
       } catch (err) {
-        console.error("Groq request failed:", err);
+        console.error("Groq request fetch failed:", err);
       }
+    } else {
+      console.error("GROQ_API_KEY is missing from process.env!");
     }
 
-    // Secondary Fallback to Gemini if Groq is unconfigured or encounters an error
+    // Fallback: Gemini
     if (!replyText && geminiKey) {
       try {
         const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
@@ -185,7 +191,7 @@ export default async function handler(req, res) {
       replyText = "Ivy is briefly offline. Please try sending your request again in a few seconds!";
     }
 
-    // Send payload to Telegram
+    // Deliver Payload
     if (searchImageUrl) {
       await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
         method: 'POST',
@@ -210,8 +216,8 @@ export default async function handler(req, res) {
     }
 
   } catch (err) {
-    console.error(err);
+    console.error("Handler error:", err);
   }
 
   return res.status(200).json({ status: 'success' });
-                                          }
+  }
