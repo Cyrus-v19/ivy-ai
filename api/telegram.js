@@ -10,12 +10,13 @@ export default async function handler(req, res) {
   const userText = message.text;
   const geminiKey = process.env.GEMINI_API_KEY;
   const serperKey = process.env.SERPER_API_KEY;
+  const groqKey = process.env.GROQ_API_KEY;
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
 
   try {
     const lowerText = userText.toLowerCase();
 
-    // --- 1. IMAGE GENERATION / SEARCH HANDLER ---
+    // --- 1. IMAGE GENERATION HANDLER ---
     const isImageRequest = lowerText.startsWith('/generate') || 
                            lowerText.includes('generate an image') ||
                            lowerText.includes('create an image') ||
@@ -31,7 +32,7 @@ export default async function handler(req, res) {
                                  .replace(/draw\s*/i, '')
                                  .trim();
 
-      // Primary: Imagen 3 API Call
+      // Direct Imagen 3 API Call via Gemini API
       try {
         const imagenUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${geminiKey}`;
         const imagenRes = await fetch(imagenUrl, {
@@ -63,7 +64,7 @@ export default async function handler(req, res) {
         console.error("Imagen API call failed, falling back to Serper Images:", e);
       }
 
-      // Secondary Fallback: Serper Image Search
+      // Fallback: Serper Image Search
       if (serperKey) {
         const imgRes = await fetch('https://google.serper.dev/images', {
           method: 'POST',
@@ -91,7 +92,6 @@ export default async function handler(req, res) {
     // --- 2. REAL-TIME SEARCH & SYSTEM CONTEXT ---
     let finalPrompt = userText;
     let searchImageUrl = null;
-
     const currentDate = new Date().toISOString().split('T')[0];
 
     const searchKeywords = [
@@ -126,37 +126,66 @@ export default async function handler(req, res) {
       }
     }
 
-    // --- 3. MODEL FALLBACK SYSTEM ---
-    const models = ['gemini-flash-latest', 'gemini-pro-latest'];
+    // --- 3. HIGH-SPEED GROQ ENGINE ---
     let replyText = null;
 
-    for (const model of models) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            role: 'user',
-            parts: [{ 
-              text: `You are Ivy, an intelligent personal AI assistant. Today's UTC date is ${currentDate}. Always treat live search data as absolute truth for recent events. Never claim you cannot generate images directly; if an image request reaches this stage, describe or fulfill it accurately.\n\n${finalPrompt}` 
-            }]
-          }]
-        })
-      });
+    if (groqKey) {
+      try {
+        const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${groqKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'llama-3.3-70b-versatile',
+            messages: [
+              {
+                role: 'system',
+                content: `You are Ivy, an intelligent personal AI assistant. Today's UTC date is ${currentDate}. Always treat live search data as absolute truth for recent events.`
+              },
+              {
+                role: 'user',
+                content: finalPrompt
+              }
+            ],
+            temperature: 0.7
+          })
+        });
 
-      const data = await response.json();
-      if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-        replyText = data.candidates[0].content.parts[0].text;
-        break;
+        const groqData = await groqRes.json();
+        replyText = groqData.choices?.[0]?.message?.content;
+      } catch (err) {
+        console.error("Groq request failed:", err);
+      }
+    }
+
+    // Secondary Fallback to Gemini if Groq is unconfigured or encounters an error
+    if (!replyText && geminiKey) {
+      try {
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
+        const geminiRes = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              role: 'user',
+              parts: [{ text: `You are Ivy, an intelligent personal AI assistant. Today's UTC date is ${currentDate}.\n\n${finalPrompt}` }]
+            }]
+          })
+        });
+        const geminiData = await geminiRes.json();
+        replyText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+      } catch (err) {
+        console.error("Gemini fallback failed:", err);
       }
     }
 
     if (!replyText) {
-      replyText = "Ivy is currently experiencing high demand. Please try sending your message again in a moment!";
+      replyText = "Ivy is briefly offline. Please try sending your request again in a few seconds!";
     }
 
-    // Send photo caption or text response
+    // Send payload to Telegram
     if (searchImageUrl) {
       await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
         method: 'POST',
@@ -185,4 +214,4 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).json({ status: 'success' });
-          }
+                                          }
