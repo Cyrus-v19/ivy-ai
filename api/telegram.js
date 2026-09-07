@@ -123,9 +123,8 @@ export default async function handler(req, res) {
       }
     }
 
-    // --- 3. GROQ ENGINE WITH TELEGRAM ERROR REPORTING ---
+    // --- 3. GROQ ENGINE (llama-3.1-8b-instant) ---
     let replyText = null;
-    let debugError = "";
 
     if (groqKey) {
       try {
@@ -136,7 +135,7 @@ export default async function handler(req, res) {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
+            model: 'llama-3.1-8b-instant',
             messages: [
               {
                 role: 'system',
@@ -154,20 +153,16 @@ export default async function handler(req, res) {
         const groqData = await groqRes.json();
         if (groqData.choices?.[0]?.message?.content) {
           replyText = groqData.choices[0].message.content;
-        } else {
-          debugError = `Groq Error: ${groqData.error?.message || JSON.stringify(groqData)}`;
         }
       } catch (err) {
-        debugError = `Groq Fetch Exception: ${err.message}`;
+        console.error("Groq Exception:", err);
       }
-    } else {
-      debugError = "Error: GROQ_API_KEY environment variable is completely missing in Vercel!";
     }
 
-    // Backup: Gemini 2.5 Flash
+    // Backup: Gemini 1.5 Flash
     if (!replyText && geminiKey) {
       try {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
         const geminiRes = await fetch(geminiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -180,17 +175,13 @@ export default async function handler(req, res) {
         });
         const geminiData = await geminiRes.json();
         replyText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
-        
-        if (!replyText) {
-          debugError += ` | Gemini Error: ${geminiData.error?.message || 'Rate Limited'}`;
-        }
       } catch (err) {
-        debugError += ` | Gemini Exception: ${err.message}`;
+        console.error("Gemini Exception:", err);
       }
     }
 
     if (!replyText) {
-      replyText = `System Debug Info: ${debugError}`;
+      replyText = "Ivy is briefly offline. Please try sending your request again in a few seconds!";
     }
 
     // Deliver Payload
@@ -218,7 +209,7 @@ export default async function handler(req, res) {
     }
 
   } catch (err) {
-    console.error(err);
+    console.error("Handler error:", err);
   }
 
   return res.status(200).json({ status: 'success' });
