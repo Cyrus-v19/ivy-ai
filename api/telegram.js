@@ -15,68 +15,51 @@ export default async function handler(req, res) {
   try {
     const lowerText = userText.toLowerCase();
 
-    // --- CHECK FOR IMAGE GENERATION REQUESTS ---
-    const isImageGenerationRequest = lowerText.startsWith('/generate') || 
-                                    lowerText.includes('generate an image') ||
-                                    lowerText.includes('create an image') ||
-                                    lowerText.includes('draw');
+    // --- 1. DIRECT IMAGE GENERATION / SEARCH REQUESTS ---
+    const isImageRequest = lowerText.startsWith('/generate') || 
+                           lowerText.includes('generate an image') ||
+                           lowerText.includes('create an image') ||
+                           lowerText.includes('show me an image') ||
+                           lowerText.includes('draw');
 
-    if (isImageGenerationRequest) {
-      // Clean up the prompt by removing the commands
+    if (isImageRequest && serperKey) {
       const imagePrompt = userText.replace(/^\/generate\s*/i, '')
                                  .replace(/generate an image of\s*/i, '')
                                  .replace(/create an image of\s*/i, '')
+                                 .replace(/show me an image of\s*/i, '')
                                  .trim();
 
-      // Make call to Imagen 3 endpoint
-      const imageUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-images-fast:generateContent?key=${geminiKey}`;
-      
-      const imagenResponse = await fetch(imageUrl, {
+      // Fetch dedicated high-res image via Serper Images
+      const imgRes = await fetch('https://google.serper.dev/images', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{ text: imagePrompt }]
-          }]
-        })
+        headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ q: imagePrompt, num: 1 })
       });
+      const imgData = await imgRes.json();
+      const imageUrl = imgData.images?.[0]?.imageUrl;
 
-      const imagenData = await imagenResponse.json();
-      
-      // Look for the generated image data (Base64)
-      const base64Image = imagenData.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-
-      if (base64Image) {
-        // Prepare multipart form data for Telegram sendPhoto
-        const formData = new FormData();
-        formData.append('chat_id', chatId);
-        
-        // Convert base64 string to a Blob/File object
-        const imageBlob = await fetch(`data:image/png;base64,${base64Image}`).then(r => r.blob());
-        formData.append('photo', imageBlob, 'generated_image.png');
-        formData.append('caption', `Here is the image I generated for: "${imagePrompt}"`);
-
+      if (imageUrl) {
         await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
           method: 'POST',
-          body: formData // No specific Content-Type header needed for multipart/form-data with fetch
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            photo: imageUrl,
+            caption: `Here is the image for: "${imagePrompt}"`
+          })
         });
-
       } else {
-        const errorMessage = imagenData.error?.message || "I couldn't generate that image right now. Perhaps try a different prompt?";
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text: errorMessage })
+          body: JSON.stringify({ chat_id: chatId, text: "I couldn't find an image for that prompt. Try another description!" })
         });
       }
 
-      // Exit early so it doesn't try standard text generation
       return res.status(200).json({ status: 'success' });
     }
-    // --- END OF IMAGE GENERATION ---
 
-
-    // --- STANDARD TEXT/NEWS GENERATION (Existing Logic) ---
+    // --- 2. TEXT & SEARCH LOGIC ---
     let finalPrompt = userText;
     let searchImageUrl = null;
 
@@ -95,22 +78,10 @@ export default async function handler(req, res) {
         finalPrompt = `Answer the user question using these live search results:\n${snippets}\n\nUser Question: ${userText}`;
         searchImageUrl = searchData.organic.find(item => item.imageUrl)?.imageUrl || null;
       }
-
-      if (!searchImageUrl) {
-        const imgRes = await fetch('https://google.serper.dev/images', {
-          method: 'POST',
-          headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ q: userText, num: 1 })
-        });
-        const imgData = await imgRes.json();
-        if (imgData.images && imgData.images.length > 0) {
-          searchImageUrl = imgData.images[0].imageUrl;
-        }
-      }
     }
 
-    // Call Gemini for text/news (using your existing retry logic)
-    const models = ['gemini-flash-latest', 'gemini-1.5-flash'];
+    // Modern active model aliases
+    const models = ['gemini-flash-latest', 'gemini-pro-latest'];
     let replyText = null;
 
     for (const model of models) {
@@ -127,10 +98,8 @@ export default async function handler(req, res) {
       });
 
       const data = await response.json();
-      const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      
-      if (content) {
-        replyText = content;
+      if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+        replyText = data.candidates[0].content.parts[0].text;
         break;
       }
     }
@@ -139,7 +108,6 @@ export default async function handler(req, res) {
       replyText = "Ivy is currently experiencing high demand. Please try sending your message again in a moment!";
     }
 
-    // Send Photo (for news) if an image was found, otherwise send text
     if (searchImageUrl) {
       await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
         method: 'POST',
@@ -168,4 +136,4 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).json({ status: 'success' });
-  }
+        }
