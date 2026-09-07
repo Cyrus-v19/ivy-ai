@@ -15,23 +15,23 @@ export default async function handler(req, res) {
   try {
     const lowerText = userText.toLowerCase();
 
-    // Expanded Intent Check for Image Generation
+    // --- 1. IMAGE GENERATION / SEARCH HANDLER ---
     const isImageRequest = lowerText.startsWith('/generate') || 
-                           lowerText.includes('generate') ||
+                           lowerText.includes('generate an image') ||
                            lowerText.includes('create an image') ||
-                           lowerText.includes('draw') ||
-                           lowerText.includes('picture of') ||
-                           lowerText.includes('photo of');
+                           lowerText.includes('show me an image') ||
+                           lowerText.includes('draw');
 
     if (isImageRequest) {
       const imagePrompt = userText.replace(/^\/generate\s*/i, '')
                                  .replace(/generate an image of\s*/i, '')
                                  .replace(/create an image of\s*/i, '')
+                                 .replace(/show me an image of\s*/i, '')
                                  .replace(/draw a\s*/i, '')
                                  .replace(/draw\s*/i, '')
                                  .trim();
 
-      // 1. TRY DIRECT IMAGEN 3 GENERATION
+      // Primary: Imagen 3 API Call
       try {
         const imagenUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${geminiKey}`;
         const imagenRes = await fetch(imagenUrl, {
@@ -60,10 +60,10 @@ export default async function handler(req, res) {
           return res.status(200).json({ status: 'success' });
         }
       } catch (e) {
-        console.error("Imagen 3 failed, falling back to Serper image search:", e);
+        console.error("Imagen API call failed, falling back to Serper Images:", e);
       }
 
-      // 2. FALLBACK TO SERPER IMAGE SEARCH IF IMAGEN FAILS OR IS UNAVAILABLE
+      // Secondary Fallback: Serper Image Search
       if (serperKey) {
         const imgRes = await fetch('https://google.serper.dev/images', {
           method: 'POST',
@@ -88,27 +88,45 @@ export default async function handler(req, res) {
       }
     }
 
-    // --- STANDARD TEXT & NEWS ROUTING ---
+    // --- 2. REAL-TIME SEARCH & SYSTEM CONTEXT ---
     let finalPrompt = userText;
     let searchImageUrl = null;
 
-    const needsSearch = lowerText.includes('latest') || lowerText.includes('news') || lowerText.includes('today') || lowerText.includes('who is') || lowerText.includes('what is');
-    
+    const currentDate = new Date().toISOString().split('T')[0];
+
+    const searchKeywords = [
+      'latest', 'news', 'today', 'yesterday', 'who is', 'what is', 'where is',
+      'when is', 'score', 'match', 'price', 'rate', 'weather', 'happened',
+      'recent', 'update', 'current', 'release date', 'winner', 'election'
+    ];
+
+    const needsSearch = searchKeywords.some(keyword => lowerText.includes(keyword));
+
     if (needsSearch && serperKey) {
-      const searchRes = await fetch('https://google.serper.dev/search', {
+      const isNewsQuery = lowerText.includes('news') || lowerText.includes('latest') || lowerText.includes('update');
+      const serperEndpoint = isNewsQuery ? 'https://google.serper.dev/news' : 'https://google.serper.dev/search';
+
+      const searchRes = await fetch(serperEndpoint, {
         method: 'POST',
         headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
         body: JSON.stringify({ q: userText })
       });
       const searchData = await searchRes.json();
-      
-      if (searchData.organic && searchData.organic.length > 0) {
-        const snippets = searchData.organic.slice(0, 4).map(item => `${item.title}: ${item.snippet}`).join('\n');
-        finalPrompt = `Answer the user question using these live search results:\n${snippets}\n\nUser Question: ${userText}`;
-        searchImageUrl = searchData.organic.find(item => item.imageUrl)?.imageUrl || null;
+
+      const results = isNewsQuery ? searchData.news : searchData.organic;
+
+      if (results && results.length > 0) {
+        const snippets = results.slice(0, 5).map(item => {
+          const dateStr = item.date ? `[Date: ${item.date}] ` : '';
+          return `${dateStr}${item.title}: ${item.snippet}`;
+        }).join('\n');
+
+        finalPrompt = `Answer the user question using these live search results as your primary context.\n\nLive Search Data:\n${snippets}\n\nUser Question: ${userText}`;
+        searchImageUrl = results.find(item => item.imageUrl)?.imageUrl || null;
       }
     }
 
+    // --- 3. MODEL FALLBACK SYSTEM ---
     const models = ['gemini-flash-latest', 'gemini-pro-latest'];
     let replyText = null;
 
@@ -120,7 +138,9 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           contents: [{
             role: 'user',
-            parts: [{ text: `You are Ivy, an AI assistant. Never claim you cannot generate images directly; if an image was requested, generate or display it.\n\n${finalPrompt}` }]
+            parts: [{ 
+              text: `You are Ivy, an intelligent personal AI assistant. Today's UTC date is ${currentDate}. Always treat live search data as absolute truth for recent events. Never claim you cannot generate images directly; if an image request reaches this stage, describe or fulfill it accurately.\n\n${finalPrompt}` 
+            }]
           }]
         })
       });
@@ -136,6 +156,7 @@ export default async function handler(req, res) {
       replyText = "Ivy is currently experiencing high demand. Please try sending your message again in a moment!";
     }
 
+    // Send photo caption or text response
     if (searchImageUrl) {
       await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
         method: 'POST',
@@ -164,4 +185,4 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).json({ status: 'success' });
-                                          }
+          }
