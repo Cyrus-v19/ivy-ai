@@ -15,51 +15,80 @@ export default async function handler(req, res) {
   try {
     const lowerText = userText.toLowerCase();
 
-    // --- 1. DIRECT IMAGE GENERATION / SEARCH REQUESTS ---
+    // Expanded Intent Check for Image Generation
     const isImageRequest = lowerText.startsWith('/generate') || 
-                           lowerText.includes('generate an image') ||
+                           lowerText.includes('generate') ||
                            lowerText.includes('create an image') ||
-                           lowerText.includes('show me an image') ||
-                           lowerText.includes('draw');
+                           lowerText.includes('draw') ||
+                           lowerText.includes('picture of') ||
+                           lowerText.includes('photo of');
 
-    if (isImageRequest && serperKey) {
+    if (isImageRequest) {
       const imagePrompt = userText.replace(/^\/generate\s*/i, '')
                                  .replace(/generate an image of\s*/i, '')
                                  .replace(/create an image of\s*/i, '')
-                                 .replace(/show me an image of\s*/i, '')
+                                 .replace(/draw a\s*/i, '')
+                                 .replace(/draw\s*/i, '')
                                  .trim();
 
-      // Fetch dedicated high-res image via Serper Images
-      const imgRes = await fetch('https://google.serper.dev/images', {
-        method: 'POST',
-        headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ q: imagePrompt, num: 1 })
-      });
-      const imgData = await imgRes.json();
-      const imageUrl = imgData.images?.[0]?.imageUrl;
-
-      if (imageUrl) {
-        await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+      // 1. TRY DIRECT IMAGEN 3 GENERATION
+      try {
+        const imagenUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${geminiKey}`;
+        const imagenRes = await fetch(imagenUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            chat_id: chatId,
-            photo: imageUrl,
-            caption: `Here is the image for: "${imagePrompt}"`
+            instances: [{ prompt: imagePrompt }],
+            parameters: { sampleCount: 1, aspectRatio: "1:1" }
           })
         });
-      } else {
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text: "I couldn't find an image for that prompt. Try another description!" })
-        });
+
+        const imagenData = await imagenRes.json();
+        const base64Image = imagenData.predictions?.[0]?.bytesBase64Encoded;
+
+        if (base64Image) {
+          const formData = new FormData();
+          formData.append('chat_id', chatId);
+          const imageBlob = await fetch(`data:image/png;base64,${base64Image}`).then(r => r.blob());
+          formData.append('photo', imageBlob, 'generated_image.png');
+          formData.append('caption', `Generated image for: "${imagePrompt}"`);
+
+          await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+            method: 'POST',
+            body: formData
+          });
+          return res.status(200).json({ status: 'success' });
+        }
+      } catch (e) {
+        console.error("Imagen 3 failed, falling back to Serper image search:", e);
       }
 
-      return res.status(200).json({ status: 'success' });
+      // 2. FALLBACK TO SERPER IMAGE SEARCH IF IMAGEN FAILS OR IS UNAVAILABLE
+      if (serperKey) {
+        const imgRes = await fetch('https://google.serper.dev/images', {
+          method: 'POST',
+          headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ q: imagePrompt, num: 1 })
+        });
+        const imgData = await imgRes.json();
+        const searchImageUrl = imgData.images?.[0]?.imageUrl;
+
+        if (searchImageUrl) {
+          await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              photo: searchImageUrl,
+              caption: `Here is an image for: "${imagePrompt}"`
+            })
+          });
+          return res.status(200).json({ status: 'success' });
+        }
+      }
     }
 
-    // --- 2. TEXT & SEARCH LOGIC ---
+    // --- STANDARD TEXT & NEWS ROUTING ---
     let finalPrompt = userText;
     let searchImageUrl = null;
 
@@ -80,7 +109,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // Modern active model aliases
     const models = ['gemini-flash-latest', 'gemini-pro-latest'];
     let replyText = null;
 
@@ -92,7 +120,7 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           contents: [{
             role: 'user',
-            parts: [{ text: `You are Ivy, a helpful personal AI assistant.\n\n${finalPrompt}` }]
+            parts: [{ text: `You are Ivy, an AI assistant. Never claim you cannot generate images directly; if an image was requested, generate or display it.\n\n${finalPrompt}` }]
           }]
         })
       });
@@ -136,4 +164,4 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).json({ status: 'success' });
-        }
+                                          }
