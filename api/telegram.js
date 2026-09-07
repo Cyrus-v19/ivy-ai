@@ -32,7 +32,6 @@ export default async function handler(req, res) {
                                  .replace(/draw\s*/i, '')
                                  .trim();
 
-      // Imagen 3 Call via Gemini
       try {
         const imagenUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${geminiKey}`;
         const imagenRes = await fetch(imagenUrl, {
@@ -61,10 +60,9 @@ export default async function handler(req, res) {
           return res.status(200).json({ status: 'success' });
         }
       } catch (e) {
-        console.error("Imagen API call failed:", e);
+        console.error("Imagen failed:", e);
       }
 
-      // Fallback: Serper Images
       if (serperKey) {
         const imgRes = await fetch('https://google.serper.dev/images', {
           method: 'POST',
@@ -89,7 +87,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // --- 2. REAL-TIME SEARCH & SYSTEM CONTEXT ---
+    // --- 2. SERPER REAL-TIME SEARCH ---
     let finalPrompt = userText;
     let searchImageUrl = null;
     const currentDate = new Date().toISOString().split('T')[0];
@@ -112,7 +110,6 @@ export default async function handler(req, res) {
         body: JSON.stringify({ q: userText })
       });
       const searchData = await searchRes.json();
-
       const results = isNewsQuery ? searchData.news : searchData.organic;
 
       if (results && results.length > 0) {
@@ -126,8 +123,9 @@ export default async function handler(req, res) {
       }
     }
 
-    // --- 3. GROQ ENGINE WITH DETAILED ERROR LOGGING ---
+    // --- 3. GROQ ENGINE WITH TELEGRAM ERROR REPORTING ---
     let replyText = null;
+    let debugError = "";
 
     if (groqKey) {
       try {
@@ -157,16 +155,16 @@ export default async function handler(req, res) {
         if (groqData.choices?.[0]?.message?.content) {
           replyText = groqData.choices[0].message.content;
         } else {
-          console.error("Groq API Response Error:", JSON.stringify(groqData));
+          debugError = `Groq Error: ${groqData.error?.message || JSON.stringify(groqData)}`;
         }
       } catch (err) {
-        console.error("Groq request fetch failed:", err);
+        debugError = `Groq Fetch Exception: ${err.message}`;
       }
     } else {
-      console.error("GROQ_API_KEY is missing from process.env!");
+      debugError = "Error: GROQ_API_KEY environment variable is completely missing in Vercel!";
     }
 
-    // Fallback: Gemini
+    // Backup: Gemini 2.5 Flash
     if (!replyText && geminiKey) {
       try {
         const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
@@ -182,13 +180,17 @@ export default async function handler(req, res) {
         });
         const geminiData = await geminiRes.json();
         replyText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        if (!replyText) {
+          debugError += ` | Gemini Error: ${geminiData.error?.message || 'Rate Limited'}`;
+        }
       } catch (err) {
-        console.error("Gemini fallback failed:", err);
+        debugError += ` | Gemini Exception: ${err.message}`;
       }
     }
 
     if (!replyText) {
-      replyText = "Ivy is briefly offline. Please try sending your request again in a few seconds!";
+      replyText = `System Debug Info: ${debugError}`;
     }
 
     // Deliver Payload
@@ -216,8 +218,8 @@ export default async function handler(req, res) {
     }
 
   } catch (err) {
-    console.error("Handler error:", err);
+    console.error(err);
   }
 
   return res.status(200).json({ status: 'success' });
-  }
+          }
