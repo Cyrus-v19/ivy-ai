@@ -123,7 +123,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // --- 3. GROQ ENGINE (llama-3.1-8b-instant) ---
+    // --- 3. GROQ ENGINE (openai/gpt-oss-20b) ---
     let replyText = null;
 
     if (groqKey) {
@@ -135,7 +135,7 @@ export default async function handler(req, res) {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            model: 'llama-3.1-8b-instant',
+            model: 'openai/gpt-oss-20b',
             messages: [
               {
                 role: 'system',
@@ -159,10 +159,10 @@ export default async function handler(req, res) {
       }
     }
 
-    // Backup: Gemini 1.5 Flash
+    // Backup: Gemini 3.6 Flash
     if (!replyText && geminiKey) {
       try {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiKey}`;
         const geminiRes = await fetch(geminiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -213,4 +213,4 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).json({ status: 'success' });
-          }
+        }
